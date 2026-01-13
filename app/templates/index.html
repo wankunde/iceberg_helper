@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iceberg Metadata Viewer</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- Highlight.js for code syntax highlighting -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .sidebar {
+            background-color: white;
+            border-right: 1px solid #dee2e6;
+            min-height: calc(100vh - 56px);
+            padding: 1rem;
+        }
+        .file-item {
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            margin-bottom: 0.25rem;
+            transition: background-color 0.2s;
+        }
+        .file-item:hover {
+            background-color: #e9ecef;
+        }
+        .file-item.active {
+            background-color: #0d6efd;
+            color: white;
+        }
+        .code-container {
+            background-color: #ffffff;
+            border: 1px solid #dee2e6;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .code-container code {
+            color: #000000;
+            background-color: transparent;
+        }
+        .code-container pre {
+            color: #000000;
+            background-color: transparent;
+            margin: 0;
+        }
+        .metadata-card {
+            margin-bottom: 1rem;
+        }
+        .file-type-badge {
+            font-size: 0.75rem;
+        }
+        .search-box {
+            margin-bottom: 1rem;
+        }
+        .file-size {
+            color: #6c757d;
+            font-size: 0.875rem;
+        }
+        .manifest-item {
+            cursor: pointer;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            margin-bottom: 0.25rem;
+            margin-left: 1rem;
+            font-size: 0.875rem;
+            transition: background-color 0.2s;
+        }
+        .manifest-item:hover {
+            background-color: #e9ecef;
+        }
+        .manifest-item.active {
+            background-color: #0d6efd;
+            color: white;
+        }
+        .tree-item {
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            margin-bottom: 0.25rem;
+            transition: background-color 0.2s;
+        }
+        .tree-item:hover {
+            background-color: #e9ecef;
+        }
+        .tree-item.active {
+            background-color: #0d6efd;
+            color: white;
+        }
+        .tree-children {
+            margin-left: 1.5rem;
+            margin-top: 0.25rem;
+            display: none;
+        }
+        .tree-children.expanded {
+            display: block;
+        }
+        .tree-toggle {
+            display: inline-block;
+            width: 1rem;
+            margin-right: 0.25rem;
+            text-align: center;
+        }
+        .tree-toggle.expanded::before {
+            content: '▼';
+        }
+        .tree-toggle.collapsed::before {
+            content: '▶';
+        }
+        .snapshot-info-card {
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-dark bg-primary">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-database"></i> Iceberg Metadata Viewer
+            </span>
+            <span class="navbar-text text-white">
+                快速查看 Iceberg 表元数据
+            </span>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- 左侧边栏：目录选择 -->
+            <div class="col-md-3 sidebar">
+                <h5 class="mb-3">
+                    <i class="bi bi-folder"></i> Metadata 目录
+                </h5>
+                
+                <!-- 路径输入 -->
+                <div class="mb-3">
+                    <label for="metadataPath" class="form-label">目录路径</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="metadataPath" 
+                               placeholder="/path/to/table/metadata" 
+                               value="{{ default_metadata_dir or '' }}">
+                        <button class="btn btn-primary" type="button" id="loadBtn">
+                            <i class="bi bi-folder2-open"></i> 加载
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 加载状态 -->
+                <div id="loadingIndicator" class="d-none">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                    <span class="ms-2">扫描目录中...</span>
+                </div>
+
+                <!-- 错误提示 -->
+                <div id="errorAlert" class="alert alert-danger d-none" role="alert"></div>
+
+                <!-- 文件列表 -->
+                <div id="fileList" class="d-none">
+                    <h6 class="mt-3 mb-2">
+                        <i class="bi bi-file-earmark-text"></i> Metadata 文件
+                        <span id="latestVersionBadge" class="badge bg-success ms-2 d-none">最新</span>
+                    </h6>
+                    <div id="metadataFiles"></div>
+
+                    <h6 class="mt-3 mb-2"><i class="bi bi-table"></i> Data 文件 (Parquet)</h6>
+                    <div id="dataParquet"></div>
+                </div>
+            </div>
+
+            <!-- 右侧主内容区 -->
+            <div class="col-md-9">
+                <div class="p-3">
+                    <!-- 表元数据概览卡片 -->
+                    <div id="metadataOverview" class="d-none">
+                        <h5 class="mb-3">
+                            <i class="bi bi-info-circle"></i> 表元数据概览
+                        </h5>
+                        <div class="row" id="overviewCards"></div>
+                    </div>
+
+                    <!-- 内容展示区 -->
+                    <div id="contentArea" class="d-none">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 id="contentTitle">
+                                <i class="bi bi-file-text"></i> 文件内容
+                            </h5>
+                            <div>
+                                <button class="btn btn-sm btn-outline-secondary" id="copyBtn">
+                                    <i class="bi bi-clipboard"></i> 复制
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" id="formatToggle">
+                                    <i class="bi bi-code-square"></i> 格式化
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 搜索框 -->
+                        <div class="search-box">
+                            <input type="text" class="form-control" id="searchInput" 
+                                   placeholder="搜索内容...">
+                        </div>
+
+                        <!-- 代码展示区 -->
+                        <div class="code-container">
+                            <pre id="codeContent"><code class="language-json"></code></pre>
+                        </div>
+                    </div>
+
+                    <!-- 空状态 -->
+                    <div id="emptyState" class="text-center text-muted mt-5">
+                        <i class="bi bi-folder-x" style="font-size: 4rem;"></i>
+                        <p class="mt-3">请选择 metadata 目录开始浏览</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Highlight.js -->
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"></script>
+
+    <script>
+        let currentMetadataDir = '';
+        let currentFileData = null;
+        let isFormatted = true;
+        let allFiles = {}; // 存储所有文件信息，用于查找
+
+        // 加载目录
+        document.getElementById('loadBtn').addEventListener('click', async () => {
+            const path = document.getElementById('metadataPath').value.trim();
+            if (!path) {
+                showError('请输入目录路径');
+                return;
+            }
+            await loadDirectory(path);
+        });
+
+        // 回车加载
+        document.getElementById('metadataPath').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('loadBtn').click();
+            }
+        });
+
+        // 页面加载完成后，如果有默认路径则自动加载
+        document.addEventListener('DOMContentLoaded', () => {
+            const defaultPath = document.getElementById('metadataPath').value.trim();
+            if (defaultPath) {
+                // 延迟一点加载，确保页面完全渲染
+                setTimeout(() => {
+                    loadDirectory(defaultPath);
+                }, 500);
+            }
+        });
+
+        // 加载目录
+        async function loadDirectory(path) {
+            showLoading(true);
+            hideError();
+            hideFileList();
+            hideContent();
+            hideOverview();
+
+            try {
+                const response = await fetch(`/api/list-dir?path=${encodeURIComponent(path)}`);
+                const result = await response.json();
+
+                if (!result.success) {
+                    showError(result.error || '加载目录失败');
+                    return;
+                }
+
+                currentMetadataDir = path;
+                displayFileList(result.files, result.latest_version);
+                showFileList();
+
+                // 如果有最新版本，自动加载概览
+                if (result.latest_version) {
+                    const latestFile = (result.files.metadata_files || []).find(
+                        f => f.name === result.latest_version
+                    );
+                    if (latestFile) {
+                        await loadFile(latestFile.path, 'json', latestFile.name);
+                        await loadMetadataInfo(latestFile.path, 'json');
+                    }
+                }
+            } catch (error) {
+                showError(`加载失败: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // 显示文件列表
+        function displayFileList(files, latestVersion) {
+            // 保存所有文件信息
+            allFiles = {
+                metadata_files: files.metadata_files || [],
+                snapshots: files.snapshots || [],
+                data_parquet: files.data_parquet || []
+            };
+
+            // 只显示 Metadata 文件和 Data 文件 (Parquet)
+            displayMetadataTree('metadataFiles', files.metadata_files || [], latestVersion);
+            displayFileGroup('dataParquet', files.data_parquet || [], null, 'data-parquet');
+
+            // 显示最新版本标记
+            if (latestVersion) {
+                document.getElementById('latestVersionBadge').classList.remove('d-none');
+            }
+        }
+
+        // 显示 Metadata 树形菜单
+        function displayMetadataTree(containerId, metadataFiles, latestVersion) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+
+            if (metadataFiles.length === 0) {
+                container.innerHTML = '<small class="text-muted">无文件</small>';
+                return;
+            }
+
+            metadataFiles.forEach(metadataFile => {
+                const div = document.createElement('div');
+                div.className = 'tree-item';
+                div.dataset.path = metadataFile.path;
+                div.dataset.type = 'metadata';
+                div.dataset.name = metadataFile.name;
+
+                const isLatest = latestVersion && metadataFile.name === latestVersion;
+                const icon = getFileIcon('metadata');
+                const badge = isLatest ? '<span class="badge bg-success file-type-badge ms-1">最新</span>' : '';
+
+                div.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="tree-toggle collapsed"></span>
+                            <i class="${icon}"></i> ${metadataFile.name}${badge}
+                        </div>
+                        <small class="file-size">${formatFileSize(metadataFile.size)}</small>
+                    </div>
+                `;
+
+                // 创建子菜单容器（用于显示 snapshot 文件）
+                const childrenDiv = document.createElement('div');
+                childrenDiv.className = 'tree-children';
+                childrenDiv.id = `metadata-${metadataFile.name.replace(/[^a-zA-Z0-9]/g, '-')}-children`;
+
+                div.addEventListener('click', async (e) => {
+                    // 如果点击的是 toggle 图标，切换展开/折叠
+                    if (e.target.classList.contains('tree-toggle') || e.target.parentElement.classList.contains('tree-toggle')) {
+                        const toggle = div.querySelector('.tree-toggle');
+                        const isExpanded = toggle.classList.contains('expanded');
+                        
+                        if (isExpanded) {
+                            toggle.classList.remove('expanded');
+                            toggle.classList.add('collapsed');
+                            childrenDiv.classList.remove('expanded');
+                        } else {
+                            toggle.classList.remove('collapsed');
+                            toggle.classList.add('expanded');
+                            childrenDiv.classList.add('expanded');
+                            
+                            // 如果子菜单为空，加载 snapshot 文件
+                            if (childrenDiv.children.length === 0) {
+                                await loadSnapshotsForMetadata(metadataFile.path, childrenDiv);
+                            }
+                        }
+                        return;
+                    }
+
+                    // 移除其他 active
+                    document.querySelectorAll('.tree-item').forEach(item => {
+                        item.classList.remove('active');
+                    });
+                    div.classList.add('active');
+
+                    // 加载 metadata 文件
+                    await loadFile(metadataFile.path, 'json', metadataFile.name);
+                    await loadMetadataInfo(metadataFile.path, 'json');
+                });
+
+                container.appendChild(div);
+                container.appendChild(childrenDiv);
+            });
+        }
+
+        // 为 Metadata 文件加载对应的 Snapshot 文件
+        async function loadSnapshotsForMetadata(metadataPath, container) {
+            try {
+                // 加载 metadata 文件获取 current-snapshot-id
+                const response = await fetch(`/api/json?file_path=${encodeURIComponent(metadataPath)}&formatted=false`);
+                const result = await response.json();
+
+                if (!result.success || !result.data) {
+                    container.innerHTML = '<small class="text-muted">无法加载 snapshot 信息</small>';
+                    return;
+                }
+
+                const currentSnapshotId = result.data['current-snapshot-id'] || result.data['current_snapshot_id'];
+                if (!currentSnapshotId) {
+                    container.innerHTML = '<small class="text-muted">未找到 current-snapshot-id</small>';
+                    return;
+                }
+
+                // 查找对应的 snapshot 文件（文件名以 snap-{snapshotId} 开头）
+                const snapshotFiles = allFiles.snapshots.filter(s => 
+                    s.name.startsWith(`snap-${currentSnapshotId}`)
+                );
+
+                if (snapshotFiles.length === 0) {
+                    container.innerHTML = '<small class="text-muted">未找到对应的 snapshot 文件</small>';
+                    return;
+                }
+
+                // 显示 snapshot 文件
+                snapshotFiles.forEach(snapshotFile => {
+                    const snapshotDiv = document.createElement('div');
+                    snapshotDiv.className = 'tree-item';
+                    snapshotDiv.dataset.path = snapshotFile.path;
+                    snapshotDiv.dataset.type = 'snapshot';
+                    snapshotDiv.dataset.name = snapshotFile.name;
+
+                    const icon = getFileIcon('snapshot');
+
+                    snapshotDiv.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="tree-toggle collapsed"></span>
+                                <i class="${icon}"></i> ${snapshotFile.name}
+                            </div>
+                            <small class="file-size">${formatFileSize(snapshotFile.size)}</small>
+                        </div>
+                    `;
+
+                    // 创建 manifest 子菜单容器
+                    const manifestChildrenDiv = document.createElement('div');
+                    manifestChildrenDiv.className = 'tree-children';
+                    manifestChildrenDiv.id = `snapshot-${snapshotFile.name.replace(/[^a-zA-Z0-9]/g, '-')}-children`;
+
+                    snapshotDiv.addEventListener('click', async (e) => {
+                        // 如果点击的是 toggle 图标，切换展开/折叠
+                        if (e.target.classList.contains('tree-toggle') || e.target.parentElement.classList.contains('tree-toggle')) {
+                            const toggle = snapshotDiv.querySelector('.tree-toggle');
+                            const isExpanded = toggle.classList.contains('expanded');
+                            
+                            if (isExpanded) {
+                                toggle.classList.remove('expanded');
+                                toggle.classList.add('collapsed');
+                                manifestChildrenDiv.classList.remove('expanded');
+                            } else {
+                                toggle.classList.remove('collapsed');
+                                toggle.classList.add('expanded');
+                                manifestChildrenDiv.classList.add('expanded');
+                                
+                                // 如果子菜单为空，加载 manifest 文件
+                                if (manifestChildrenDiv.children.length === 0) {
+                                    await loadManifestsForSnapshot(snapshotFile, manifestChildrenDiv);
+                                }
+                            }
+                            return;
+                        }
+
+                        // 移除其他 active
+                        document.querySelectorAll('.tree-item').forEach(item => {
+                            item.classList.remove('active');
+                        });
+                        snapshotDiv.classList.add('active');
+
+                        // 加载 snapshot 详细信息
+                        await loadSnapshotFile(snapshotFile.path, snapshotFile.name);
+                    });
+
+                    container.appendChild(snapshotDiv);
+                    container.appendChild(manifestChildrenDiv);
+                });
+            } catch (error) {
+                container.innerHTML = `<small class="text-danger">加载失败: ${error.message}</small>`;
+            }
+        }
+
+        // 为 Snapshot 文件加载对应的 Manifest 文件
+        async function loadManifestsForSnapshot(snapshotFile, container) {
+            try {
+                // 获取 snapshot 文件的 manifest_paths
+                const manifestPaths = snapshotFile.manifest_paths || [];
+                
+                if (manifestPaths.length === 0) {
+                    container.innerHTML = '<small class="text-muted">未找到 manifest 文件</small>';
+                    return;
+                }
+
+                manifestPaths.forEach((manifestPath, index) => {
+                    // 从 manifest_path 中提取文件名
+                    const fileName = manifestPath.split('/').pop() || manifestPath;
+                    // 提取实际文件路径（去掉 file: 前缀）
+                    const actualPath = manifestPath.replace(/^file:/, '');
+                    
+                    const manifestDiv = document.createElement('div');
+                    manifestDiv.className = 'tree-item';
+                    manifestDiv.dataset.path = actualPath;
+                    manifestDiv.dataset.type = 'manifest';
+                    manifestDiv.dataset.name = fileName;
+
+                    manifestDiv.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <i class="bi bi-link-45deg"></i> ${fileName}
+                            </div>
+                            <small class="file-size">Manifest</small>
+                        </div>
+                    `;
+
+                    manifestDiv.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        // 移除其他 active
+                        document.querySelectorAll('.tree-item').forEach(item => {
+                            item.classList.remove('active');
+                        });
+                        manifestDiv.classList.add('active');
+
+                        // 加载 manifest 文件
+                        await loadFile(actualPath, 'avro', fileName);
+                    });
+
+                    container.appendChild(manifestDiv);
+                });
+            } catch (error) {
+                container.innerHTML = `<small class="text-danger">加载失败: ${error.message}</small>`;
+            }
+        }
+
+
+        // 显示文件组
+        function displayFileGroup(containerId, files, latestVersion, fileType) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+
+            if (files.length === 0) {
+                container.innerHTML = '<small class="text-muted">无文件</small>';
+                return;
+            }
+
+            files.forEach(file => {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                div.dataset.path = file.path;
+                div.dataset.type = fileType;
+                div.dataset.name = file.name;
+
+                const isLatest = latestVersion && file.name === latestVersion;
+                const icon = getFileIcon(fileType);
+                const badge = isLatest ? '<span class="badge bg-success file-type-badge ms-1">最新</span>' : '';
+
+                div.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="${icon}"></i> ${file.name}${badge}
+                        </div>
+                        <small class="file-size">${formatFileSize(file.size)}</small>
+                    </div>
+                `;
+
+                div.addEventListener('click', () => {
+                    // 移除其他 active
+                    document.querySelectorAll('.file-item').forEach(item => {
+                        item.classList.remove('active');
+                    });
+                    div.classList.add('active');
+
+                    // 根据文件类型加载不同的内容
+                    if (fileType === 'metadata') {
+                        // Metadata 文件：加载 JSON 内容并显示概览
+                        loadFile(file.path, 'json', file.name);
+                        loadMetadataInfo(file.path, 'json');
+                    } else if (fileType === 'data-avro') {
+                        // Data Avro 文件：加载 Avro 内容
+                        loadFile(file.path, 'avro', file.name);
+                    } else if (fileType === 'data-parquet') {
+                        // Data Parquet 文件：显示提示（暂不支持直接解析）
+                        showParquetInfo(file.path, file.name);
+                    } else {
+                        // 其他文件：尝试加载
+                        loadFile(file.path, fileType, file.name);
+                    }
+                });
+
+                container.appendChild(div);
+            });
+        }
+
+        // 获取文件图标
+        function getFileIcon(type) {
+            const icons = {
+                'metadata': 'bi bi-file-earmark-text text-info',
+                'snapshot': 'bi bi-camera text-primary',
+                'data-avro': 'bi bi-file-earmark-binary text-success',
+                'data-parquet': 'bi bi-table text-warning',
+                'json': 'bi bi-filetype-json text-warning',
+                'avro': 'bi bi-file-earmark-binary text-primary',
+                'other': 'bi bi-file text-secondary'
+            };
+            return icons[type] || icons.other;
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        // 加载文件内容
+        async function loadFile(filePath, fileType, fileName) {
+            showLoading(true);
+            hideContent();
+
+            try {
+                let response;
+                if (fileType === 'avro') {
+                    response = await fetch(`/api/avro?file_path=${encodeURIComponent(filePath)}&formatted=true`);
+                } else {
+                    response = await fetch(`/api/json?file_path=${encodeURIComponent(filePath)}&formatted=true`);
+                }
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    showError(result.error || '加载文件失败');
+                    return;
+                }
+
+                currentFileData = result;
+                displayContent(result.formatted || JSON.stringify(result.data, null, 2), fileName);
+                showContent();
+            } catch (error) {
+                showError(`加载文件失败: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // 加载元数据概览
+        async function loadMetadataInfo(filePath, fileType) {
+            try {
+                const response = await fetch(
+                    `/api/metadata-info?file_path=${encodeURIComponent(filePath)}&file_type=${fileType}`
+                );
+                const result = await response.json();
+
+                if (result.success) {
+                    displayMetadataOverview(result.info);
+                    showOverview();
+                }
+            } catch (error) {
+                console.error('加载元数据概览失败:', error);
+            }
+        }
+
+        // 加载 Snapshot 文件
+        async function loadSnapshotFile(filePath, fileName) {
+            showLoading(true);
+            hideContent();
+            hideOverview();
+
+            try {
+                const response = await fetch(
+                    `/api/metadata/snapshot?file_path=${encodeURIComponent(filePath)}`
+                );
+                const result = await response.json();
+
+                if (!result.success) {
+                    showError(result.error || '加载 Snapshot 文件失败');
+                    return;
+                }
+
+                currentFileData = result;
+                
+                // 显示 Snapshot 详细信息
+                displaySnapshotInfo(result.info, result.manifest_paths, fileName);
+                
+                // 显示完整 JSON 内容
+                displayContent(result.formatted || JSON.stringify(result.snapshot, null, 2), fileName);
+                showContent();
+            } catch (error) {
+                showError(`加载 Snapshot 文件失败: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // 显示 Snapshot 详细信息
+        function displaySnapshotInfo(info, manifestPaths, fileName) {
+            const container = document.getElementById('overviewCards');
+            container.innerHTML = '';
+
+            const cards = [
+                { title: 'Manifest Path', value: info.manifest_path || 'N/A', icon: 'bi-link-45deg', 
+                  class: 'col-md-12', valueClass: 'text-break', isLink: true, linkPath: info.manifest_path },
+                { title: 'Manifest Length', value: info.manifest_length || 'N/A', icon: 'bi-file-earmark-binary' },
+                { title: 'Partition Spec ID', value: info.partition_spec_id || 'N/A', icon: 'bi-hash' },
+                { title: 'Sequence Number', value: info.sequence_number || 'N/A', icon: 'bi-123' },
+                { title: 'Min Sequence Number', value: info.min_sequence_number || 'N/A', icon: 'bi-arrow-down' },
+                { title: 'Added Snapshot ID', value: info.added_snapshot_id || 'N/A', icon: 'bi-plus-circle' },
+                { title: 'Added Data Files', value: info.added_data_files_count || 0, icon: 'bi-file-plus' },
+                { title: 'Existing Data Files', value: info.existing_data_files_count || 0, icon: 'bi-file-check' },
+                { title: 'Deleted Data Files', value: info.deleted_data_files_count || 0, icon: 'bi-file-minus' },
+                { title: 'Added Rows', value: info.added_rows_count || 0, icon: 'bi-plus' },
+                { title: 'Existing Rows', value: info.existing_rows_count || 0, icon: 'bi-check' },
+                { title: 'Deleted Rows', value: info.deleted_rows_count || 0, icon: 'bi-dash' }
+            ];
+
+            cards.forEach(card => {
+                const colClass = card.class || 'col-md-6';
+                const valueClass = card.valueClass || '';
+                let valueHtml = card.value;
+                
+                // 如果是链接，添加点击事件
+                if (card.isLink && card.linkPath) {
+                    const actualPath = card.linkPath.replace(/^file:/, '');
+                    valueHtml = `<a href="#" class="text-primary text-decoration-none" onclick="event.preventDefault(); loadManifestFile('${actualPath}'); return false;">${card.value}</a>`;
+                }
+                
+                const cardHtml = `
+                    <div class="${colClass}">
+                        <div class="card snapshot-info-card">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="bi ${card.icon}"></i> ${card.title}
+                                </h6>
+                                <p class="card-text ${valueClass}">${valueHtml}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += cardHtml;
+            });
+
+            showOverview();
+        }
+
+        // 加载 Manifest 文件
+        async function loadManifestFile(filePath) {
+            const fileName = filePath.split('/').pop() || filePath;
+            await loadFile(filePath, 'avro', fileName);
+            
+            // 高亮对应的 manifest 项
+            document.querySelectorAll('.manifest-item').forEach(item => {
+                if (item.dataset.path === filePath) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+        }
+
+        // 显示内容
+        function displayContent(content, fileName) {
+            document.getElementById('contentTitle').innerHTML = 
+                `<i class="bi bi-file-text"></i> ${fileName}`;
+            
+            const codeElement = document.querySelector('#codeContent code');
+            codeElement.textContent = content;
+            
+            // 确保 hljs 已加载
+            if (typeof hljs !== 'undefined' && hljs.highlightElement) {
+                hljs.highlightElement(codeElement);
+            } else if (typeof window.hljs !== 'undefined' && window.hljs.highlightElement) {
+                window.hljs.highlightElement(codeElement);
+            } else {
+                // 如果 hljs 未加载，使用简单的代码高亮样式
+                codeElement.className = 'language-json';
+            }
+            
+            isFormatted = true;
+        }
+
+        // 显示元数据概览
+        function displayMetadataOverview(info) {
+            const container = document.getElementById('overviewCards');
+            container.innerHTML = '';
+
+            const cards = [
+                { title: 'Table UUID', value: info.table_uuid || 'N/A', icon: 'bi-hash' },
+                { title: 'Location', value: info.location || 'N/A', icon: 'bi-folder', 
+                  class: 'col-md-12', valueClass: 'text-break' },
+                { title: 'Format Version', value: info.format_version || 'N/A', icon: 'bi-123' },
+                { title: 'Current Snapshot ID', value: info.current_snapshot_id || 'N/A', icon: 'bi-camera' },
+                { title: 'Schema Fields', value: info.schema?.fields?.length || 0, icon: 'bi-table' },
+                { title: 'Snapshots Count', value: info.snapshots?.length || 0, icon: 'bi-stack' }
+            ];
+
+            cards.forEach(card => {
+                const colClass = card.class || 'col-md-6';
+                const valueClass = card.valueClass || '';
+                const cardHtml = `
+                    <div class="${colClass}">
+                        <div class="card metadata-card">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="bi ${card.icon}"></i> ${card.title}
+                                </h6>
+                                <p class="card-text ${valueClass}">${card.value}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += cardHtml;
+            });
+        }
+
+        // 复制按钮
+        document.getElementById('copyBtn').addEventListener('click', () => {
+            const content = document.querySelector('#codeContent code').textContent;
+            navigator.clipboard.writeText(content).then(() => {
+                const btn = document.getElementById('copyBtn');
+                const originalHtml = btn.innerHTML;
+                btn.innerHTML = '<i class="bi bi-check"></i> 已复制';
+                btn.classList.add('btn-success');
+                btn.classList.remove('btn-outline-secondary');
+                setTimeout(() => {
+                    btn.innerHTML = originalHtml;
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-outline-secondary');
+                }, 2000);
+            });
+        });
+
+        // 格式化切换
+        document.getElementById('formatToggle').addEventListener('click', () => {
+            if (!currentFileData) return;
+
+            isFormatted = !isFormatted;
+            const fileName = document.getElementById('contentTitle').textContent.replace(/.*\s/, '');
+            
+            if (isFormatted) {
+                // 格式化：使用 formatted 字段，如果没有则格式化 data
+                let formatted;
+                if (currentFileData.formatted) {
+                    formatted = currentFileData.formatted;
+                } else if (currentFileData.data) {
+                    try {
+                        formatted = JSON.stringify(currentFileData.data, null, 2);
+                    } catch (e) {
+                        formatted = JSON.stringify(currentFileData.data);
+                    }
+                } else {
+                    formatted = currentFileData.raw_output || '';
+                }
+                displayContent(formatted, fileName);
+            } else {
+                // 原始：使用 raw_output，如果没有则使用紧凑格式的 data
+                let raw;
+                if (currentFileData.raw_output) {
+                    raw = currentFileData.raw_output;
+                } else if (currentFileData.data) {
+                    raw = JSON.stringify(currentFileData.data);
+                } else {
+                    raw = '';
+                }
+                displayContent(raw, fileName);
+            }
+        });
+
+        // 搜索功能
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            if (!searchTerm) {
+                // 清除高亮
+                const codeElement = document.querySelector('#codeContent code');
+                const text = codeElement.textContent;
+                codeElement.innerHTML = '';
+                codeElement.textContent = text;
+                // 重新高亮
+                if (typeof hljs !== 'undefined' && hljs.highlightElement) {
+                    hljs.highlightElement(codeElement);
+                } else if (typeof window.hljs !== 'undefined' && window.hljs.highlightElement) {
+                    window.hljs.highlightElement(codeElement);
+                }
+                return;
+            }
+
+            const codeElement = document.querySelector('#codeContent code');
+            const text = codeElement.textContent;
+            const regex = new RegExp(`(${searchTerm})`, 'gi');
+            const highlighted = text.replace(regex, '<mark>$1</mark>');
+            codeElement.innerHTML = highlighted;
+        });
+
+        // UI 控制函数
+        function showLoading(show) {
+            document.getElementById('loadingIndicator').classList.toggle('d-none', !show);
+        }
+
+        function showError(message) {
+            const alert = document.getElementById('errorAlert');
+            alert.textContent = message;
+            alert.classList.remove('d-none');
+        }
+
+        function hideError() {
+            document.getElementById('errorAlert').classList.add('d-none');
+        }
+
+        function showFileList() {
+            document.getElementById('fileList').classList.remove('d-none');
+        }
+
+        function hideFileList() {
+            document.getElementById('fileList').classList.add('d-none');
+        }
+
+        function showContent() {
+            document.getElementById('contentArea').classList.remove('d-none');
+            document.getElementById('emptyState').classList.add('d-none');
+        }
+
+        function hideContent() {
+            document.getElementById('contentArea').classList.add('d-none');
+        }
+
+        function showOverview() {
+            document.getElementById('metadataOverview').classList.remove('d-none');
+        }
+
+        function hideOverview() {
+            document.getElementById('metadataOverview').classList.add('d-none');
+        }
+
+        // 显示 Parquet 文件信息（暂不支持直接解析）
+        function showParquetInfo(filePath, fileName) {
+            showContent();
+            document.getElementById('contentTitle').innerHTML = 
+                `<i class="bi bi-table"></i> ${fileName}`;
+            
+            const codeElement = document.querySelector('#codeContent code');
+            const info = `Parquet 文件: ${fileName}\n\n` +
+                        `文件路径: ${filePath}\n\n` +
+                        `注意: Parquet 文件解析功能正在开发中。\n` +
+                        `目前可以通过其他工具（如 parquet-tools）查看文件内容。`;
+            
+            codeElement.textContent = info;
+            codeElement.className = 'language-text';
+            
+            if (typeof hljs !== 'undefined' && hljs.highlightElement) {
+                hljs.highlightElement(codeElement);
+            }
+        }
+    </script>
+</body>
+</html>
+
