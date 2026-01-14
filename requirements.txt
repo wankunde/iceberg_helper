@@ -2,7 +2,10 @@ fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 jinja2>=3.1.0
 python-multipart>=0.0.6
-pyarrow>=14.0.2
+# OPTIONAL: pyarrow is heavy and fails to build on Debian 9 without wheels/toolchain.
+# Install only when you need parquet/orc preview:
+#   pip install pyarrow
+#pyarrow==<your_version>
 pyorc>=0.10.0
 fastavro>=1.9.0
 python-snappy>=0.6.1

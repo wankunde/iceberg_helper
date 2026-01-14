@@ -42,6 +42,8 @@ async def preview_datafile(
             "rows": rows,
         }
         return {"success": True, "data": data, "formatted": format_json(data)}
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"文件不存在: {file_path}")
     except HTTPException:

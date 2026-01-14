@@ -422,8 +422,14 @@ def _strip_file_prefix(path: str) -> str:
 
 
 def read_parquet_rows(file_path: str, limit: int = 100) -> Tuple[List[Dict[str, Any]], List[str]]:
-    import pyarrow.parquet as pq
     actual = _strip_file_prefix(file_path)
+    try:
+        import pyarrow.parquet as pq  # type: ignore
+    except Exception as e:
+        raise RuntimeError(
+            "缺少 pyarrow，无法预览 parquet。请在需要该功能的环境中安装：pip install pyarrow"
+        ) from e
+
     table = pq.read_table(actual)
     rows = table.to_pylist()[:limit]
     fields = [f.name for f in table.schema]
@@ -434,15 +440,23 @@ def read_orc_rows(file_path: str, limit: int = 100) -> Tuple[List[Dict[str, Any]
     rows: List[Dict[str, Any]] = []
     fields: List[str] = []
     actual = _strip_file_prefix(file_path)
+
+    # Prefer pyarrow if available, fallback to pyorc if installed.
     try:
-        import pyarrow.orc as o
+        import pyarrow.orc as o  # type: ignore
         of = o.ORCFile(actual)
         table = of.read()
         rows = table.to_pylist()[:limit]
         fields = [f.name for f in table.schema]
         return rows, fields
     except Exception:
-        import pyorc
+        try:
+            import pyorc  # type: ignore
+        except Exception as e:
+            raise RuntimeError(
+                "缺少 ORC 读取依赖（pyarrow 或 pyorc）。请安装其一：pip install pyarrow 或 pip install pyorc"
+            ) from e
+
         with open(actual, "rb") as f:
             reader = pyorc.Reader(f)
             fields = [n for n, _t in reader.schema.fields]
