@@ -5,7 +5,7 @@
 ## 功能特性
 
 - 📁 **目录浏览**: 选择 Iceberg 表的 metadata 目录，自动扫描并分类显示元数据文件
-- 🔍 **Avro 解析**: 调用本地 `avro-tools.jar` 解析 Avro 格式的元数据文件
+- 🔍 **Avro 解析**: 解析 Avro 格式的元数据文件
 - 📄 **JSON 格式化**: 自动格式化 JSON 文件，提供美观的代码高亮展示
 - 📊 **元数据概览**: 自动提取并展示表的关键信息（UUID、Location、Schema、Partition Spec 等）
 - 🔎 **搜索功能**: 支持在文件内容中搜索关键字并高亮显示
@@ -15,8 +15,6 @@
 ## 环境要求
 
 - Python 3.13.7
-- Java（用于运行 avro-tools.jar）
-- avro-tools-1.11.4.jar（已配置路径：`/Users/wankun/apps/avro-tools-1.11.4.jar`）
 
 ## 快速开始
 
@@ -99,8 +97,6 @@ iceberg_helper/
 
 ## 注意事项
 
-- 确保 `avro-tools.jar` 文件存在于配置的路径：`/Users/wankun/apps/avro-tools-1.11.4.jar`
-- 如果路径不同，可以修改 `app/config.py` 中的 `AVRO_TOOLS_JAR` 配置
 - 首次启动会自动创建虚拟环境并安装依赖，可能需要一些时间
 
 ## 技术栈
@@ -112,4 +108,3 @@ iceberg_helper/
 ## 许可证
 
 MIT License
-

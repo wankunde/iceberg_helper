@@ -1,120 +1,93 @@
 """Iceberg 元数据解析服务"""
 import json
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from typing import Tuple
-
-from app.config import AVRO_TOOLS_JAR, JAVA_BIN
 from app.services.json_utils import format_json, parse_json_file
+
+
+def _bytes_to_text(b: bytes) -> str:
+    # 尽量可读；不可读则 base64
+    try:
+        return b.decode("utf-8")
+    except Exception:
+        import base64
+        return "base64:" + base64.b64encode(b).decode("ascii")
+
+
+def make_json_safe(obj: Any) -> Any:
+    """
+    把 Avro/Arrow 等结构转换成可 JSON 序列化的数据：
+    - bytes -> str (utf-8 or base64:...)
+    - dict/list/tuple/set -> 递归
+    - 其他原样返回（FastAPI/JSON 通常可处理 int/float/bool/None/str）
+    """
+    if obj is None:
+        return None
+    if isinstance(obj, bytes):
+        return _bytes_to_text(obj)
+    if isinstance(obj, dict):
+        # key 也确保是 str
+        return {str(k): make_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [make_json_safe(x) for x in obj]
+    if isinstance(obj, set):
+        return [make_json_safe(x) for x in obj]
+    return obj
 
 
 def parse_avro_file(file_path: str) -> Dict[str, Any]:
     """
-    使用 avro-tools.jar 解析 Avro 文件
-    
-    Returns:
-        dict: 包含解析结果的字典，格式为:
-        {
-            "success": bool,
-            "data": list | dict | None,
-            "error": str | None,
-            "raw_output": str | None
-        }
+    使用 fastavro 解析 Avro 容器文件，返回 Python 数据结构
     """
-    if not Path(file_path).exists():
-        return {
-            "success": False,
-            "data": None,
-            "error": f"文件不存在: {file_path}",
-            "raw_output": None
-        }
-    
-    if not Path(AVRO_TOOLS_JAR).exists():
-        return {
-            "success": False,
-            "data": None,
-            "error": f"Avro Tools JAR 不存在: {AVRO_TOOLS_JAR}",
-            "raw_output": None
-        }
-    
-    if not Path(JAVA_BIN).exists():
-        return {
-            "success": False,
-            "data": None,
-            "error": f"Java 可执行文件不存在: {JAVA_BIN}",
-            "raw_output": None
-        }
-    
     try:
-        # 调用 avro-tools.jar tojson 命令
-        result = subprocess.run(
-            [JAVA_BIN, "-jar", AVRO_TOOLS_JAR, "tojson", file_path],
-            capture_output=True,
-            text=True,
-            timeout=30  # 30秒超时
-        )
-        
-        if result.returncode != 0:
+        # 统一处理 file: 前缀，避免各处重复处理/漏处理
+        raw = file_path or ""
+        actual_path = raw.replace("file:", "", 1) if raw.startswith("file:") else raw
+        p = Path(actual_path)
+
+        if not p.exists():
             return {
                 "success": False,
                 "data": None,
-                "error": f"Avro Tools 执行失败: {result.stderr}",
-                "raw_output": result.stdout
-            }
-        
-        output = result.stdout.strip()
-        if not output:
-            return {
-                "success": False,
-                "data": None,
-                "error": "Avro Tools 输出为空",
+                "error": f"文件不存在: {file_path} (resolved: {actual_path})",
                 "raw_output": None
             }
-        
-        # 尝试解析 JSON 输出
-        # avro-tools tojson 可能输出多行 JSON（每行一个 JSON 对象）
-        lines = output.split('\n')
-        parsed_data = []
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                parsed_data.append(json.loads(line))
-            except json.JSONDecodeError:
-                # 如果单行解析失败，尝试整体解析
-                try:
-                    parsed_data = json.loads(output)
-                    break
-                except json.JSONDecodeError:
-                    pass
-        
-        # 如果只有一行，直接返回该对象
-        if len(parsed_data) == 1:
-            parsed_data = parsed_data[0]
-        
+
+        from fastavro import reader
+        records: List[Any] = []
+        with p.open("rb") as fo:
+            for rec in reader(fo):
+                records.append(rec)
+
+        data: Any = records[0] if len(records) == 1 else records
+        data = make_json_safe(data)  # <-- 关键：避免 bytes 导致 JSON 序列化失败
+
         return {
             "success": True,
-            "data": parsed_data,
+            "data": data,
             "error": None,
-            "raw_output": output
-        }
-        
-    except subprocess.TimeoutExpired:
-        return {
-            "success": False,
-            "data": None,
-            "error": "Avro Tools 执行超时（30秒）",
             "raw_output": None
         }
     except Exception as e:
+        msg = str(e)
+        hints: List[str] = []
+
+        # 针对常见编解码器缺失给出明确提示（不要声称“已添加到 requirements.txt”）
+        low = msg.lower()
+        if "snappy" in low:
+            hints.append("可能缺少 python-snappy（pip install python-snappy）或系统 snappy 库")
+        if "zstandard" in low or "zstd" in low:
+            hints.append("可能缺少 zstandard（pip install zstandard）")
+
+        hint_text = f"；{'；'.join(hints)}" if hints else ""
         return {
             "success": False,
             "data": None,
-            "error": f"解析过程出错: {str(e)}",
-            "raw_output": None
+            "error": f"解析 Avro 失败: {msg}{hint_text}",
+            "raw_output": {
+                "exception": repr(e),
+            },
         }
 
 
@@ -336,6 +309,8 @@ def extract_current_snapshot_manifests(metadata_data: Dict[str, Any]) -> Dict[st
     manifest_list = None
     manifest_paths: List[str] = []
     current_snapshot_obj = None
+    manifest_list_error: Optional[str] = None
+
     if isinstance(metadata_data, dict):
         current_snapshot_id = metadata_data.get("current-snapshot-id") or metadata_data.get("current_snapshot_id")
         snapshots = metadata_data.get("snapshots") or []
@@ -347,10 +322,9 @@ def extract_current_snapshot_manifests(metadata_data: Dict[str, Any]) -> Dict[st
                         current_snapshot_obj = s
                         manifest_list = s.get("manifest-list") or s.get("manifest_list")
                         break
+
         if manifest_list:
             actual_path = str(manifest_list)
-            if actual_path.startswith("file:"):
-                actual_path = actual_path.replace("file:", "", 1)
             result = parse_avro_file(actual_path)
             if result.get("success") and result.get("data"):
                 data = result["data"]
@@ -364,11 +338,16 @@ def extract_current_snapshot_manifests(metadata_data: Dict[str, Any]) -> Dict[st
                     mp = data.get("manifest_path")
                     if mp:
                         manifest_paths.append(mp)
+            else:
+                # 关键：把 manifest-list 解析失败原因带回去，便于接口/前端展示
+                manifest_list_error = result.get("error")
+
     return {
         "current_snapshot_id": current_snapshot_id,
         "current_snapshot": current_snapshot_obj,
         "manifest_list": manifest_list,
-        "manifest_paths": manifest_paths
+        "manifest_paths": manifest_paths,
+        "manifest_list_error": manifest_list_error,
     }
 
 

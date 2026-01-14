@@ -55,13 +55,6 @@ pip install --upgrade pip -q
 echo "安装依赖..."
 pip install -r requirements.txt -q
 
-# 检查 avro-tools.jar 是否存在
-AVRO_TOOLS_JAR="/Users/wankun/apps/avro-tools-1.11.4.jar"
-if [ ! -f "$AVRO_TOOLS_JAR" ]; then
-    echo "警告: Avro Tools JAR 文件不存在: $AVRO_TOOLS_JAR"
-    echo "请确保文件存在，否则无法解析 Avro 文件"
-fi
-
 # 启动服务
 echo "=========================================="
 echo "启动服务..."
@@ -76,4 +69,3 @@ echo "=========================================="
 export DEFAULT_METADATA_DIR="$DEFAULT_METADATA_DIR"
 
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-
