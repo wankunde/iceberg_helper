@@ -24,7 +24,7 @@ docker build \
   --network=host \
   --build-arg HTTP_PROXY=http://127.0.0.1:1080 \
   --build-arg HTTPS_PROXY=http://127.0.0.1:1080 \
-  --build-arg NO_PROXY=localhost,127.0.0.1,10.*.*.* \
+  --build-arg NO_PROXY=localhost,127.0.0.1,10.0.0.0/8 \
   -t "$IMAGE_TAG" -f "$PROJECT_ROOT/Dockerfile" "$PROJECT_ROOT"
 
 echo "[docker-build] done: $IMAGE_TAG"

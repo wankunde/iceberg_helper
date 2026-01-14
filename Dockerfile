@@ -5,8 +5,14 @@ FROM python:3.12-slim AS builder
 ENV PIP_NO_CACHE_DIR=1
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
 ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
-    PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
+    PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST} \
+    HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    NO_PROXY=${NO_PROXY}
 
 WORKDIR /app
 
@@ -25,15 +31,21 @@ COPY requirements.txt /app/requirements.txt
 
 # Pre-download all deps as wheels (for offline install in runtime stage)
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip wheel -i https://pypi.tuna.tsinghua.edu.cn/simple --progress-bar on -r /app/requirements.txt -w /wheels
+    pip wheel -i "${PIP_INDEX_URL}" --progress-bar on -r /app/requirements.txt -w /wheels
 
 
 FROM python:3.12-slim AS runtime
 
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
 ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST} \
+    HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    NO_PROXY=${NO_PROXY} \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
