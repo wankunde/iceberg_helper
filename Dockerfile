@@ -25,7 +25,7 @@ COPY requirements.txt /app/requirements.txt
 
 # Pre-download all deps as wheels (for offline install in runtime stage)
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip wheel -r /app/requirements.txt -w /wheels
+    pip wheel -i https://pypi.tuna.tsinghua.edu.cn/simple --progress-bar on -r /app/requirements.txt -w /wheels
 
 
 FROM python:3.12-slim AS runtime

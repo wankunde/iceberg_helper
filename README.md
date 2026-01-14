@@ -95,9 +95,15 @@ iceberg_helper/
 - `GET /api/json?file_path=<文件路径>&formatted=true`: 读取 JSON 文件
 - `GET /api/metadata-info?file_path=<文件路径>&file_type=<json|avro>`: 获取元数据概览
 
-## 注意事项
+## 运行模式
 
-- 首次启动会自动创建虚拟环境并安装依赖，可能需要一些时间
+* 本地运行: `./scripts/start.sh $META_DATA_PATH`
+* 容器运行: 
+```sh
+./scripts/docker_build.sh
+
+```
+
 
 ## 技术栈
 
