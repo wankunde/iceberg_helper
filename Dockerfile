@@ -1,8 +1,13 @@
 # syntax=docker/dockerfile:1.6
 
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim
 
-ENV PIP_NO_CACHE_DIR=1
+ENV PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_HOST=0.0.0.0 \
+    APP_PORT=8001
+
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 ARG HTTP_PROXY
@@ -23,52 +28,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libzstd-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# NEW: venv for builder
+# Create venv and use it for everything
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
 
 COPY requirements.txt /app/requirements.txt
 
-# Pre-download all deps as wheels (for offline install in runtime stage)
+# Download wheels first (with progress), then install offline from wheels
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip wheel -i "${PIP_INDEX_URL}" --progress-bar on -r /app/requirements.txt -w /wheels
-
-
-FROM python:3.12-slim AS runtime
-
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
-ARG HTTP_PROXY
-ARG HTTPS_PROXY
-ARG NO_PROXY
-ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
-    PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST} \
-    HTTP_PROXY=${HTTP_PROXY} \
-    HTTPS_PROXY=${HTTPS_PROXY} \
-    NO_PROXY=${NO_PROXY} \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    APP_HOST=0.0.0.0 \
-    APP_PORT=8001
-
-WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates \
-      libsnappy-dev \
-      libzstd-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# NEW: venv for runtime (actual app runs inside it)
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:${PATH}"
-
-COPY requirements.txt /app/requirements.txt
-COPY --from=builder /wheels /wheels
-
-# Offline install from pre-downloaded wheels into venv
-RUN pip install --no-index --find-links=/wheels -r /app/requirements.txt
+    pip wheel -i "${PIP_INDEX_URL}" --progress-bar on -r /app/requirements.txt -w /wheels \
+    && pip install --no-index --find-links=/wheels -r /app/requirements.txt
 
 COPY app /app/app
 
