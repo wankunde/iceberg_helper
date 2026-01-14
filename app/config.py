@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 # 默认端口
-DEFAULT_PORT = 8000
+DEFAULT_PORT = 8001
 
 # 默认主机
 DEFAULT_HOST = "127.0.0.1"

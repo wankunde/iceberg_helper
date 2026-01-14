@@ -45,6 +45,7 @@ echo "[docker-start] image=${IMAGE_TAG}"
 echo "[docker-start] name=${CONTAINER_NAME}"
 echo "[docker-start] table_root=${TABLE_ROOT}"
 echo "[docker-start] network=host"
+echo "[docker-start] url=http://127.0.0.1:8001"
 
 # Remove existing container if any
 if docker ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then

@@ -4,7 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     APP_HOST=0.0.0.0 \
-    APP_PORT=8000
+    APP_PORT=8001
 
 WORKDIR /app
 
@@ -25,6 +25,6 @@ RUN pip install --upgrade pip && pip install -r /app/requirements.txt
 # Copy application code
 COPY app /app/app
 
-EXPOSE 8000
+EXPOSE 8001
 
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

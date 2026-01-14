@@ -58,7 +58,7 @@ pip install -r requirements.txt -q
 # 启动服务
 echo "=========================================="
 echo "启动服务..."
-echo "访问地址: http://127.0.0.1:8000"
+echo "访问地址: http://127.0.0.1:8001"
 if [ -n "$DEFAULT_METADATA_DIR" ]; then
     echo "默认 Metadata 目录: $DEFAULT_METADATA_DIR"
 fi
@@ -68,4 +68,4 @@ echo "=========================================="
 # 通过环境变量传递默认 metadata 目录
 export DEFAULT_METADATA_DIR="$DEFAULT_METADATA_DIR"
 
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
