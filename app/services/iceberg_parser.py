@@ -459,14 +459,67 @@ def read_orc_rows(file_path: str, limit: int = 100) -> Tuple[List[Dict[str, Any]
 
         with open(actual, "rb") as f:
             reader = pyorc.Reader(f)
-            fields = [n for n, _t in reader.schema.fields]
-            for i, r in enumerate(reader):
+
+            # CHANGED: do not assume reader.schema.fields is (name, type) tuples
+            it = iter(reader)
+            first = None
+            try:
+                first = next(it)
+            except StopIteration:
+                return [], []
+
+            def _schema_field_names_or_empty() -> List[str]:
+                try:
+                    sch = getattr(reader, "schema", None)
+                    flds = getattr(sch, "fields", None) if sch is not None else None
+                    if not flds:
+                        return []
+                    names: List[str] = []
+                    for fld in flds:
+                        # fld may be tuple, string, or Field object depending on pyorc version
+                        if isinstance(fld, tuple) and len(fld) >= 1:
+                            names.append(str(fld[0]))
+                        elif isinstance(fld, str):
+                            names.append(fld)
+                        else:
+                            n = getattr(fld, "name", None)
+                            if n is not None:
+                                names.append(str(n))
+                            else:
+                                names.append(str(fld))
+                    return names
+                except Exception:
+                    return []
+
+            def _cols_from_value(v: Any) -> List[str]:
+                if isinstance(v, dict):
+                    return [str(k) for k in v.keys()]
+                if isinstance(v, tuple):
+                    names = _schema_field_names_or_empty()
+                    if names and len(names) == len(v):
+                        return names
+                    return [f"col_{i}" for i in range(len(v))]
+                return ["value"]
+
+            fields = _cols_from_value(first)
+
+            def _row_to_dict(v: Any) -> Dict[str, Any]:
+                if isinstance(v, dict):
+                    return {str(k): _unwrap_union(val) for k, val in v.items()}
+                if isinstance(v, tuple):
+                    out: Dict[str, Any] = {}
+                    for i in range(len(fields)):
+                        out[fields[i]] = _unwrap_union(v[i]) if i < len(v) else None
+                    return out
+                return {"value": _unwrap_union(v)}
+
+            # include first row
+            rows.append(_row_to_dict(first))
+
+            # continue remaining rows up to limit
+            for i, r in enumerate(it, start=1):
                 if i >= limit:
                     break
-                if isinstance(r, tuple):
-                    rows.append({fields[idx]: r[idx] for idx in range(len(fields))})
-                elif isinstance(r, dict):
-                    rows.append(r)
-                else:
-                    rows.append({"value": r})
+                rows.append(_row_to_dict(r))
+
         return rows, fields

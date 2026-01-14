@@ -100,8 +100,14 @@ iceberg_helper/
 * 本地运行: `./scripts/start.sh $META_DATA_PATH`
 * 容器运行: 
 ```sh
+# Build
 ./scripts/docker_build.sh
 
+# Run
+./scripts/docker_start.sh
+
+# Log
+docker logs -f iceberg-helper
 ```
 
 
