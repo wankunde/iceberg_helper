@@ -766,6 +766,14 @@ function displayFileList(files, latestVersion) {
 }
 
 // -------------------- API calls --------------------
+function _toMetadataDirFromTableRoot(inputPath) {
+  const p = String(inputPath || '').trim().replace(/\/+$/, '');
+  if (!p) return '';
+  // 如果用户已经输入的是 metadata 目录，保持不变
+  if (p.endsWith('/metadata')) return p;
+  return p + '/metadata';
+}
+
 async function loadDirectory(path) {
   showLoading(true);
   hideError();
@@ -774,7 +782,10 @@ async function loadDirectory(path) {
   hideOverview();
 
   try {
-    const response = await fetch(`/api/list-dir?path=${encodeURIComponent(path)}`);
+    // CHANGED: UI 输入为 table root，这里自动补 /metadata
+    const metadataDir = _toMetadataDirFromTableRoot(path);
+
+    const response = await fetch(`/api/list-dir?path=${encodeURIComponent(metadataDir)}`);
     const result = await response.json();
 
     if (!result.success) {
@@ -782,7 +793,9 @@ async function loadDirectory(path) {
       return;
     }
 
-    currentMetadataDir = path;
+    // NOTE: currentMetadataDir 仍保存实际 metadata 目录
+    currentMetadataDir = metadataDir;
+
     displayFileList(result.files, result.latest_version);
     showFileList();
 

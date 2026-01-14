@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.config import DEFAULT_METADATA_DIR, STATIC_DIR, TEMPLATES_DIR
+from app.config import DEFAULT_TABLE_ROOT, STATIC_DIR, TEMPLATES_DIR
 
 # NEW: routers
 from app.api.routes.files import router as files_router
@@ -26,7 +26,7 @@ if STATIC_DIR.exists():
 async def index(request: Request):
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "default_metadata_dir": DEFAULT_METADATA_DIR},
+        {"request": request, "default_table_root": DEFAULT_TABLE_ROOT},
     )
 
 

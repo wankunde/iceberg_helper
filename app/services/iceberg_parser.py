@@ -423,12 +423,8 @@ def _strip_file_prefix(path: str) -> str:
 
 def read_parquet_rows(file_path: str, limit: int = 100) -> Tuple[List[Dict[str, Any]], List[str]]:
     actual = _strip_file_prefix(file_path)
-    try:
-        import pyarrow.parquet as pq  # type: ignore
-    except Exception as e:
-        raise RuntimeError(
-            "缺少 pyarrow，无法预览 parquet。请在需要该功能的环境中安装：pip install pyarrow"
-        ) from e
+
+    import pyarrow.parquet as pq  # type: ignore
 
     table = pq.read_table(actual)
     rows = table.to_pylist()[:limit]

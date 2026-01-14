@@ -28,7 +28,7 @@
 ./scripts/start.sh
 ```
 
-服务将在 `http://127.0.0.1:8000` 启动。
+服务将在 `http://127.0.0.1:8001` 启动。
 
 ### 3. 停止服务
 
@@ -98,18 +98,23 @@ iceberg_helper/
 ## 运行模式
 
 * 本地运行: `./scripts/start.sh $META_DATA_PATH`
-* 容器运行: 
-```sh
-# Build
+
+## Docker
+
+构建镜像：
+```bash
 ./scripts/docker_build.sh
-
-# Run
-./scripts/docker_start.sh
-
-# Log
-docker logs -f iceberg-helper
 ```
 
+启动容器：
+```bash
+./scripts/docker_start.sh
+```
+
+查看日志：
+```bash
+docker logs -f iceberg-helper
+```
 
 ## 技术栈
 

@@ -33,16 +33,16 @@
             <!-- 左侧边栏：目录选择 -->
             <div class="col-md-3 sidebar">
                 <h5 class="mb-3">
-                    <i class="bi bi-folder"></i> Metadata 目录
+                    <i class="bi bi-folder"></i> Iceberg 表目录
                 </h5>
                 
                 <!-- 路径输入 -->
                 <div class="mb-3">
-                    <label for="metadataPath" class="form-label">目录路径</label>
+                    <label for="metadataPath" class="form-label">表根目录 (Table Root)</label>
                     <div class="input-group">
                         <input type="text" class="form-control" id="metadataPath" 
-                               placeholder="/path/to/table/metadata" 
-                               value="{{ default_metadata_dir or '' }}">
+                               placeholder="/path/to/warehouse/db/table" 
+                               value="{{ default_table_root or '' }}">
                         <button class="btn btn-primary" type="button" id="loadBtn">
                             <i class="bi bi-folder2-open"></i> 加载
                         </button>

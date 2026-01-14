@@ -56,10 +56,10 @@ fi
 docker run -d \
   --name "${CONTAINER_NAME}" \
   --network host \
-  -e DEFAULT_METADATA_DIR="${TABLE_ROOT}/metadata" \
+  -e DEFAULT_TABLE_ROOT="${TABLE_ROOT}" \
   -v "${TABLE_ROOT}:${TABLE_ROOT}:ro" \
   "${IMAGE_TAG}"
 
 echo "[docker-start] started: ${CONTAINER_NAME}"
-echo "[docker-start] default metadata dir: ${TABLE_ROOT}/metadata"
+echo "[docker-start] default table root: ${TABLE_ROOT}"
 echo "[docker-start] logs: docker logs -f ${CONTAINER_NAME}"

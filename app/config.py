@@ -17,5 +17,8 @@ TEMPLATES_DIR = PROJECT_ROOT / "app" / "templates"
 # 静态文件目录
 STATIC_DIR = PROJECT_ROOT / "app" / "static"
 
+# 默认 Table Root（从环境变量读取）
+DEFAULT_TABLE_ROOT = os.getenv("DEFAULT_TABLE_ROOT", "")
+
 # 默认 Metadata 目录（从环境变量读取）
 DEFAULT_METADATA_DIR = os.getenv("DEFAULT_METADATA_DIR", "")

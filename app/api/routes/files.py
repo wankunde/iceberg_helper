@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
+from pathlib import Path
 
 from app.security.path_safety import normalize_local_path
 from app.services.iceberg_parser import parse_avro_file, scan_metadata_directory, extract_table_metadata_info
@@ -8,10 +9,15 @@ router = APIRouter()
 
 
 @router.get("/list-dir")
-async def list_directory(path: str = Query(..., description="目录路径")):
+async def list_directory(path: str = Query(..., description="表根目录路径 (Table Root)")):
     try:
         safe_dir = normalize_local_path(path)
-        result = scan_metadata_directory(safe_dir)
+
+        # CHANGED: accept table root, append /metadata unless already points to metadata
+        p = Path(safe_dir)
+        metadata_dir = p if p.name == "metadata" else (p / "metadata")
+
+        result = scan_metadata_directory(str(metadata_dir))
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["error"])
         return result
