@@ -13,6 +13,8 @@ from app.services.iceberg_parser import (
     extract_table_metadata_info,
     parse_avro_file,
     scan_metadata_directory,
+    extract_current_snapshot_manifests,
+    extract_manifest_info,
 )
 from app.services.json_utils import format_json, parse_json_file
 
@@ -155,6 +157,26 @@ async def view_metadata(
         raise HTTPException(status_code=500, detail=f"查看 Metadata 文件失败: {str(e)}")
 
 
+@app.get("/api/metadata/current-manifests")
+async def get_current_manifests(
+    file_path: str = Query(..., description="Metadata JSON 文件路径"),
+):
+    try:
+        metadata_data = parse_json_file(file_path)
+        result = extract_current_snapshot_manifests(metadata_data)
+        return {
+            "success": True,
+            **result,
+            "formatted": format_json(result)
+        }
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取当前快照 manifests 失败: {str(e)}")
+
+
 @app.get("/api/metadata/snapshot")
 async def view_snapshot(
     file_path: str = Query(..., description="Snapshot Avro 文件路径"),
@@ -229,6 +251,27 @@ async def view_snapshot(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"查看 Snapshot 文件失败: {str(e)}")
 
+
+@app.get("/api/metadata/manifest")
+async def view_manifest(
+    file_path: str = Query(..., description="Manifest Avro 文件路径"),
+):
+    try:
+        result = parse_avro_file(file_path)
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["error"])
+        manifest_data = result["data"]
+        info = extract_manifest_info(manifest_data)
+        return {
+            "success": True,
+            "manifest": manifest_data,
+            "info": info,
+            "formatted": format_json(manifest_data)
+        }
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查看 Manifest 文件失败: {str(e)}")
 
 @app.get("/api/data/avro")
 async def view_data_avro(
@@ -309,4 +352,3 @@ if __name__ == "__main__":
     from app.config import DEFAULT_HOST, DEFAULT_PORT
     
     uvicorn.run(app, host=DEFAULT_HOST, port=DEFAULT_PORT)
-

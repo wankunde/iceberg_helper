@@ -403,120 +403,84 @@
         // 为 Metadata 文件加载对应的 Snapshot 文件
         async function loadSnapshotsForMetadata(metadataPath, container) {
             try {
-                // 加载 metadata 文件获取 current-snapshot-id
-                const response = await fetch(`/api/json?file_path=${encodeURIComponent(metadataPath)}&formatted=false`);
+                const response = await fetch(`/api/metadata/current-manifests?file_path=${encodeURIComponent(metadataPath)}`);
                 const result = await response.json();
-
-                if (!result.success || !result.data) {
+                if (!result.success) {
                     container.innerHTML = '<small class="text-muted">无法加载 snapshot 信息</small>';
                     return;
                 }
-
-                const currentSnapshotId = result.data['current-snapshot-id'] || result.data['current_snapshot_id'];
-                if (!currentSnapshotId) {
-                    container.innerHTML = '<small class="text-muted">未找到 current-snapshot-id</small>';
+                const manifestList = result.manifest_list;
+                const manifestPaths = result.manifest_paths || [];
+                if (!manifestList) {
+                    container.innerHTML = '<small class="text-muted">未找到 manifest-list</small>';
                     return;
                 }
-
-                // 查找对应的 snapshot 文件（文件名以 snap-{snapshotId} 开头）
-                const snapshotFiles = allFiles.snapshots.filter(s => 
-                    s.name.startsWith(`snap-${currentSnapshotId}`)
-                );
-
-                if (snapshotFiles.length === 0) {
-                    container.innerHTML = '<small class="text-muted">未找到对应的 snapshot 文件</small>';
-                    return;
-                }
-
-                // 显示 snapshot 文件
-                snapshotFiles.forEach(snapshotFile => {
-                    const snapshotDiv = document.createElement('div');
-                    snapshotDiv.className = 'tree-item';
-                    snapshotDiv.dataset.path = snapshotFile.path;
-                    snapshotDiv.dataset.type = 'snapshot';
-                    snapshotDiv.dataset.name = snapshotFile.name;
-
-                    const icon = getFileIcon('snapshot');
-
-                    snapshotDiv.innerHTML = `
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <span class="tree-toggle collapsed"></span>
-                                <i class="${icon}"></i> ${snapshotFile.name}
-                            </div>
-                            <small class="file-size">${formatFileSize(snapshotFile.size)}</small>
+                const actualPath = String(manifestList).replace(/^file:/, '');
+                const fileName = actualPath.split('/').pop() || String(manifestList);
+                const snapshotDiv = document.createElement('div');
+                snapshotDiv.className = 'tree-item';
+                snapshotDiv.dataset.path = actualPath;
+                snapshotDiv.dataset.type = 'snapshot';
+                snapshotDiv.dataset.name = fileName;
+                const icon = getFileIcon('snapshot');
+                snapshotDiv.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="tree-toggle collapsed"></span>
+                            <i class="${icon}"></i> ${fileName}
                         </div>
-                    `;
-
-                    // 创建 manifest 子菜单容器
-                    const manifestChildrenDiv = document.createElement('div');
-                    manifestChildrenDiv.className = 'tree-children';
-                    manifestChildrenDiv.id = `snapshot-${snapshotFile.name.replace(/[^a-zA-Z0-9]/g, '-')}-children`;
-
-                    snapshotDiv.addEventListener('click', async (e) => {
-                        // 如果点击的是 toggle 图标，切换展开/折叠
-                        if (e.target.classList.contains('tree-toggle') || e.target.parentElement.classList.contains('tree-toggle')) {
-                            const toggle = snapshotDiv.querySelector('.tree-toggle');
-                            const isExpanded = toggle.classList.contains('expanded');
-                            
-                            if (isExpanded) {
-                                toggle.classList.remove('expanded');
-                                toggle.classList.add('collapsed');
-                                manifestChildrenDiv.classList.remove('expanded');
-                            } else {
-                                toggle.classList.remove('collapsed');
-                                toggle.classList.add('expanded');
-                                manifestChildrenDiv.classList.add('expanded');
-                                
-                                // 如果子菜单为空，加载 manifest 文件
-                                if (manifestChildrenDiv.children.length === 0) {
-                                    await loadManifestsForSnapshot(snapshotFile, manifestChildrenDiv);
-                                }
+                        <small class="file-size">Avro</small>
+                    </div>
+                `;
+                const manifestChildrenDiv = document.createElement('div');
+                manifestChildrenDiv.className = 'tree-children';
+                manifestChildrenDiv.id = `snapshot-${fileName.replace(/[^a-zA-Z0-9]/g, '-')}-children`;
+                snapshotDiv.addEventListener('click', async (e) => {
+                    if (e.target.classList.contains('tree-toggle') || e.target.parentElement.classList.contains('tree-toggle')) {
+                        const toggle = snapshotDiv.querySelector('.tree-toggle');
+                        const isExpanded = toggle.classList.contains('expanded');
+                        if (isExpanded) {
+                            toggle.classList.remove('expanded');
+                            toggle.classList.add('collapsed');
+                            manifestChildrenDiv.classList.remove('expanded');
+                        } else {
+                            toggle.classList.remove('collapsed');
+                            toggle.classList.add('expanded');
+                            manifestChildrenDiv.classList.add('expanded');
+                            if (manifestChildrenDiv.children.length === 0) {
+                                await loadManifestsForSnapshot(manifestPaths, manifestChildrenDiv);
                             }
-                            return;
                         }
-
-                        // 移除其他 active
-                        document.querySelectorAll('.tree-item').forEach(item => {
-                            item.classList.remove('active');
-                        });
-                        snapshotDiv.classList.add('active');
-
-                        // 加载 snapshot 详细信息
-                        await loadSnapshotFile(snapshotFile.path, snapshotFile.name);
+                        return;
+                    }
+                    document.querySelectorAll('.tree-item').forEach(item => {
+                        item.classList.remove('active');
                     });
-
-                    container.appendChild(snapshotDiv);
-                    container.appendChild(manifestChildrenDiv);
+                    snapshotDiv.classList.add('active');
+                    await loadSnapshotFile(actualPath, fileName);
                 });
+                container.appendChild(snapshotDiv);
+                container.appendChild(manifestChildrenDiv);
             } catch (error) {
                 container.innerHTML = `<small class="text-danger">加载失败: ${error.message}</small>`;
             }
         }
 
         // 为 Snapshot 文件加载对应的 Manifest 文件
-        async function loadManifestsForSnapshot(snapshotFile, container) {
+        async function loadManifestsForSnapshot(manifestPaths, container) {
             try {
-                // 获取 snapshot 文件的 manifest_paths
-                const manifestPaths = snapshotFile.manifest_paths || [];
-                
-                if (manifestPaths.length === 0) {
+                if (!manifestPaths || manifestPaths.length === 0) {
                     container.innerHTML = '<small class="text-muted">未找到 manifest 文件</small>';
                     return;
                 }
-
-                manifestPaths.forEach((manifestPath, index) => {
-                    // 从 manifest_path 中提取文件名
+                manifestPaths.forEach((manifestPath) => {
                     const fileName = manifestPath.split('/').pop() || manifestPath;
-                    // 提取实际文件路径（去掉 file: 前缀）
                     const actualPath = manifestPath.replace(/^file:/, '');
-                    
                     const manifestDiv = document.createElement('div');
                     manifestDiv.className = 'tree-item';
                     manifestDiv.dataset.path = actualPath;
                     manifestDiv.dataset.type = 'manifest';
                     manifestDiv.dataset.name = fileName;
-
                     manifestDiv.innerHTML = `
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
@@ -525,19 +489,14 @@
                             <small class="file-size">Manifest</small>
                         </div>
                     `;
-
                     manifestDiv.addEventListener('click', async (e) => {
                         e.stopPropagation();
-                        // 移除其他 active
                         document.querySelectorAll('.tree-item').forEach(item => {
                             item.classList.remove('active');
                         });
                         manifestDiv.classList.add('active');
-
-                        // 加载 manifest 文件
-                        await loadFile(actualPath, 'avro', fileName);
+                        await loadManifestFile(actualPath, fileName);
                     });
-
                     container.appendChild(manifestDiv);
                 });
             } catch (error) {
@@ -545,6 +504,111 @@
             }
         }
 
+        async function loadManifestFile(filePath, fileName) {
+            showLoading(true);
+            hideContent();
+            hideOverview();
+            try {
+                if (!fileName) {
+                    fileName = filePath.split('/').pop() || filePath;
+                }
+                const response = await fetch(`/api/metadata/manifest?file_path=${encodeURIComponent(filePath)}`);
+                const result = await response.json();
+                if (!result.success) {
+                    showError(result.error || '加载 Manifest 文件失败');
+                    return;
+                }
+                currentFileData = result;
+                displayManifestInfo(result.info, fileName);
+                displayContent(result.formatted || JSON.stringify(result.manifest, null, 2), fileName);
+                showOverview();
+                showContent();
+            } catch (error) {
+                showError(`加载 Manifest 文件失败: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function displayManifestInfo(info, fileName) {
+            const container = document.getElementById('overviewCards');
+            container.innerHTML = '';
+            const headerCards = [
+                { title: 'Manifest 文件', value: fileName || 'N/A', icon: 'bi-file-earmark-binary', class: 'col-md-12', valueClass: 'text-break' },
+                { title: '条目数', value: info.entries_count || 0, icon: 'bi-list-ol' },
+                { title: 'Data Files', value: (info.data_files || []).length, icon: 'bi-file-earmark-text' },
+            ];
+            headerCards.forEach(card => {
+                const colClass = card.class || 'col-md-4';
+                const valueClass = card.valueClass || '';
+                const cardHtml = `
+                    <div class="${colClass}">
+                        <div class="card metadata-card">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="bi ${card.icon}"></i> ${card.title}
+                                </h6>
+                                <p class="card-text ${valueClass}">${card.value}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += cardHtml;
+            });
+            const dataFiles = info.data_files || [];
+            dataFiles.forEach((df, idx) => {
+                const dfHtml = `
+                    <div class="col-md-12">
+                        <div class="card snapshot-info-card">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="bi bi-file-earmark-text"></i> Data File #${idx + 1}
+                                </h6>
+                                <div class="row">
+                                    <div class="col-md-12">
+                                        <strong>file_path:</strong> <span class="text-break">${df.file_path || 'N/A'}</span>
+                                    </div>
+                                    <div class="col-md-3"><strong>file_format:</strong> ${df.file_format || 'N/A'}</div>
+                                    <div class="col-md-3"><strong>record_count:</strong> ${df.record_count ?? 'N/A'}</div>
+                                    <div class="col-md-3"><strong>file_size_in_bytes:</strong> ${df.file_size_in_bytes ?? 'N/A'}</div>
+                                    <div class="col-md-12"><strong>partition:</strong> <span class="text-break">${JSON.stringify(df.partition || {})}</span></div>
+                                </div>
+                                <div class="mt-3">
+                                    <h6><i class="bi bi-columns"></i> Column Files</h6>
+                                    ${renderColumnFiles(df.column_files || [])}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += dfHtml;
+            });
+        }
+
+        function renderColumnFiles(columnFiles) {
+            if (!columnFiles || columnFiles.length === 0) {
+                return '<small class="text-muted">无 column_files</small>';
+            }
+            let html = '<ul class="list-group">';
+            columnFiles.forEach((cf) => {
+                const ids = Array.isArray(cf.column_file_ids) ? cf.column_file_ids.join(', ') : '';
+                html += `
+                    <li class="list-group-item">
+                        <div class="row">
+                            <div class="col-md-12">
+                                <strong>column_file_path:</strong> <span class="text-break">${cf.column_file_path || 'N/A'}</span>
+                            </div>
+                            <div class="col-md-3"><strong>length:</strong> ${cf.column_file_length ?? 'N/A'}</div>
+                            <div class="col-md-3"><strong>record_count:</strong> ${cf.column_file_record_count ?? 'N/A'}</div>
+                            <div class="col-md-3"><strong>snapshot_id:</strong> ${cf.column_file_snapshot_id ?? 'N/A'}</div>
+                            <div class="col-md-12"><strong>column_file_ids:</strong> ${ids}</div>
+                        </div>
+                    </li>
+                `;
+            });
+            html += '</ul>';
+            return html;
+        }
 
         // 显示文件组
         function displayFileGroup(containerId, files, latestVersion, fileType) {
@@ -754,19 +818,9 @@
             showOverview();
         }
 
-        // 加载 Manifest 文件
-        async function loadManifestFile(filePath) {
-            const fileName = filePath.split('/').pop() || filePath;
-            await loadFile(filePath, 'avro', fileName);
-            
-            // 高亮对应的 manifest 项
-            document.querySelectorAll('.manifest-item').forEach(item => {
-                if (item.dataset.path === filePath) {
-                    item.classList.add('active');
-                } else {
-                    item.classList.remove('active');
-                }
-            });
+        // 兼容旧调用（从快照卡片中的链接调用）
+        async function loadManifestFileCompat(filePath) {
+            await loadManifestFile(filePath);
         }
 
         // 显示内容
@@ -964,4 +1018,3 @@
     </script>
 </body>
 </html>
-

@@ -329,3 +329,107 @@ def extract_table_metadata_info(metadata_data: Dict[str, Any]) -> Dict[str, Any]
     
     return info
 
+
+def extract_current_snapshot_manifests(metadata_data: Dict[str, Any]) -> Dict[str, Any]:
+    current_snapshot_id = None
+    manifest_list = None
+    manifest_paths: List[str] = []
+    current_snapshot_obj = None
+    if isinstance(metadata_data, dict):
+        current_snapshot_id = metadata_data.get("current-snapshot-id") or metadata_data.get("current_snapshot_id")
+        snapshots = metadata_data.get("snapshots") or []
+        if current_snapshot_id and isinstance(snapshots, list):
+            for s in snapshots:
+                if isinstance(s, dict):
+                    sid = s.get("snapshot-id") or s.get("snapshot_id")
+                    if sid == current_snapshot_id:
+                        current_snapshot_obj = s
+                        manifest_list = s.get("manifest-list") or s.get("manifest_list")
+                        break
+        if manifest_list:
+            actual_path = str(manifest_list)
+            if actual_path.startswith("file:"):
+                actual_path = actual_path.replace("file:", "", 1)
+            result = parse_avro_file(actual_path)
+            if result.get("success") and result.get("data"):
+                data = result["data"]
+                if isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict):
+                            mp = item.get("manifest_path")
+                            if mp:
+                                manifest_paths.append(mp)
+                elif isinstance(data, dict):
+                    mp = data.get("manifest_path")
+                    if mp:
+                        manifest_paths.append(mp)
+    return {
+        "current_snapshot_id": current_snapshot_id,
+        "current_snapshot": current_snapshot_obj,
+        "manifest_list": manifest_list,
+        "manifest_paths": manifest_paths
+    }
+
+
+def _unwrap_union(value: Any) -> Any:
+    if isinstance(value, dict) and len(value.keys()) == 1:
+        k = next(iter(value.keys()))
+        if k in {"long", "int", "float", "double", "string", "bytes", "boolean"}:
+            return value[k]
+    return value
+
+
+def _unwrap_array(value: Any) -> Any:
+    if isinstance(value, dict) and "array" in value:
+        return value["array"]
+    return value
+
+
+def _normalize_partition(partition: Dict[str, Any]) -> Dict[str, Any]:
+    result: Dict[str, Any] = {}
+    if isinstance(partition, dict):
+        for k, v in partition.items():
+            result[k] = _unwrap_union(v)
+    return result
+
+
+def extract_manifest_info(manifest_data: Any) -> Dict[str, Any]:
+    data_files: List[Dict[str, Any]] = []
+    items: List[Dict[str, Any]] = []
+    if isinstance(manifest_data, list):
+        items = [x for x in manifest_data if isinstance(x, dict)]
+    elif isinstance(manifest_data, dict):
+        items = [manifest_data]
+    for entry in items:
+        df = entry.get("data_file") or {}
+        if not isinstance(df, dict):
+            continue
+        file_path = df.get("file_path")
+        file_format = df.get("file_format")
+        partition = _normalize_partition(df.get("partition") or {})
+        record_count = df.get("record_count")
+        file_size_in_bytes = df.get("file_size_in_bytes")
+        column_files_raw = _unwrap_array(df.get("column_files") or {})
+        column_files: List[Dict[str, Any]] = []
+        if isinstance(column_files_raw, list):
+            for cf in column_files_raw:
+                if isinstance(cf, dict):
+                    column_files.append({
+                        "column_file_path": cf.get("column_file_path"),
+                        "column_file_length": cf.get("column_file_length"),
+                        "column_file_record_count": cf.get("column_file_record_count"),
+                        "column_file_snapshot_id": cf.get("column_file_snapshot_id"),
+                        "column_file_ids": cf.get("column_file_ids") or []
+                    })
+        data_files.append({
+            "file_path": file_path,
+            "file_format": file_format,
+            "partition": partition,
+            "record_count": record_count,
+            "file_size_in_bytes": file_size_in_bytes,
+            "column_files": column_files
+        })
+    return {
+        "entries_count": len(items),
+        "data_files": data_files
+    }
