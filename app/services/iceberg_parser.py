@@ -3,6 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from typing import Tuple
 
 from app.config import AVRO_TOOLS_JAR, JAVA_BIN
 from app.services.json_utils import format_json, parse_json_file
@@ -433,3 +434,46 @@ def extract_manifest_info(manifest_data: Any) -> Dict[str, Any]:
         "entries_count": len(items),
         "data_files": data_files
     }
+
+
+def _strip_file_prefix(path: str) -> str:
+    if isinstance(path, str) and path.startswith("file:"):
+        return path.replace("file:", "", 1)
+    return path
+
+
+def read_parquet_rows(file_path: str, limit: int = 100) -> Tuple[List[Dict[str, Any]], List[str]]:
+    import pyarrow.parquet as pq
+    actual = _strip_file_prefix(file_path)
+    table = pq.read_table(actual)
+    rows = table.to_pylist()[:limit]
+    fields = [f.name for f in table.schema]
+    return rows, fields
+
+
+def read_orc_rows(file_path: str, limit: int = 100) -> Tuple[List[Dict[str, Any]], List[str]]:
+    rows: List[Dict[str, Any]] = []
+    fields: List[str] = []
+    actual = _strip_file_prefix(file_path)
+    try:
+        import pyarrow.orc as o
+        of = o.ORCFile(actual)
+        table = of.read()
+        rows = table.to_pylist()[:limit]
+        fields = [f.name for f in table.schema]
+        return rows, fields
+    except Exception:
+        import pyorc
+        with open(actual, "rb") as f:
+            reader = pyorc.Reader(f)
+            fields = [n for n, _t in reader.schema.fields]
+            for i, r in enumerate(reader):
+                if i >= limit:
+                    break
+                if isinstance(r, tuple):
+                    rows.append({fields[idx]: r[idx] for idx in range(len(fields))})
+                elif isinstance(r, dict):
+                    rows.append(r)
+                else:
+                    rows.append({"value": r})
+        return rows, fields

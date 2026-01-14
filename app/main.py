@@ -15,6 +15,8 @@ from app.services.iceberg_parser import (
     scan_metadata_directory,
     extract_current_snapshot_manifests,
     extract_manifest_info,
+    read_parquet_rows,
+    read_orc_rows,
 )
 from app.services.json_utils import format_json, parse_json_file
 
@@ -272,6 +274,48 @@ async def view_manifest(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"查看 Manifest 文件失败: {str(e)}")
+
+@app.get("/api/preview/datafile")
+async def preview_datafile(
+    file_path: str = Query(..., description="数据文件路径（parquet 或 orc）"),
+    file_format: Optional[str] = Query(None, description="文件格式: parquet 或 orc（可选，自动识别）"),
+    limit: int = Query(100, description="预览行数", ge=1, le=100),
+):
+    try:
+        actual_path = file_path.replace("file:", "") if file_path.startswith("file:") else file_path
+        fmt = (file_format or "").lower()
+        if not fmt:
+            if actual_path.lower().endswith(".parquet"):
+                fmt = "parquet"
+            elif actual_path.lower().endswith(".orc"):
+                fmt = "orc"
+            else:
+                raise HTTPException(status_code=400, detail="无法识别文件格式，请提供 file_format 参数")
+        if fmt == "parquet":
+            rows, fields = read_parquet_rows(actual_path, limit)
+        elif fmt == "orc":
+            rows, fields = read_orc_rows(actual_path, limit)
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的文件格式: {file_format}")
+        data = {
+            "path": actual_path,
+            "format": fmt,
+            "limit": limit,
+            "fields": fields,
+            "rows_count": len(rows),
+            "rows": rows
+        }
+        return {
+            "success": True,
+            "data": data,
+            "formatted": format_json(data)
+        }
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"文件不存在: {file_path}")
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"预览数据文件失败: {str(e)}")
 
 @app.get("/api/data/avro")
 async def view_data_avro(

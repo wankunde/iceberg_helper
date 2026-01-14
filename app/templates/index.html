@@ -573,6 +573,11 @@
                                     <div class="col-md-3"><strong>file_size_in_bytes:</strong> ${df.file_size_in_bytes ?? 'N/A'}</div>
                                     <div class="col-md-12"><strong>partition:</strong> <span class="text-break">${JSON.stringify(df.partition || {})}</span></div>
                                 </div>
+                                <div class="mt-2">
+                                    <button class="btn btn-sm btn-outline-primary" data-file-path="${df.file_path || ''}" data-file-format="${df.file_format || ''}" onclick="previewDataFileFromButton(this)">
+                                        <i class="bi bi-eye"></i> 预览前100行
+                                    </button>
+                                </div>
                                 <div class="mt-3">
                                     <h6><i class="bi bi-columns"></i> Column Files</h6>
                                     ${renderColumnFiles(df.column_files || [])}
@@ -602,12 +607,47 @@
                             <div class="col-md-3"><strong>record_count:</strong> ${cf.column_file_record_count ?? 'N/A'}</div>
                             <div class="col-md-3"><strong>snapshot_id:</strong> ${cf.column_file_snapshot_id ?? 'N/A'}</div>
                             <div class="col-md-12"><strong>column_file_ids:</strong> ${ids}</div>
+                            <div class="col-md-12 mt-2">
+                                <button class="btn btn-sm btn-outline-primary" data-file-path="${cf.column_file_path || ''}" data-file-format="" onclick="previewDataFileFromButton(this)">
+                                    <i class="bi bi-eye"></i> 预览前100行
+                                </button>
+                            </div>
                         </div>
                     </li>
                 `;
             });
             html += '</ul>';
             return html;
+        }
+
+        async function previewDataFile(filePath, fileFormat) {
+            try {
+                const actualPath = String(filePath || '').replace(/^file:/, '');
+                const fmt = (fileFormat || '').toLowerCase();
+                const url = `/api/preview/datafile?file_path=${encodeURIComponent(actualPath)}${fmt ? `&file_format=${fmt}` : ''}&limit=100`;
+                showLoading(true);
+                hideOverview();
+                const response = await fetch(url);
+                const result = await response.json();
+                if (!result.success) {
+                    showError(result.error || '预览数据文件失败');
+                    return;
+                }
+                currentFileData = result;
+                const fileName = actualPath.split('/').pop() || actualPath;
+                displayContent(result.formatted || JSON.stringify(result.data, null, 2), fileName + ' 预览');
+                showContent();
+            } catch (error) {
+                showError(`预览数据文件失败: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function previewDataFileFromButton(btn) {
+            const path = btn.getAttribute('data-file-path') || '';
+            const fmt = btn.getAttribute('data-file-format') || '';
+            previewDataFile(path, fmt);
         }
 
         // 显示文件组
