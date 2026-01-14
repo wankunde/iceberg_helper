@@ -16,7 +16,6 @@ echo "[docker-build] pip_trusted_host=$PIP_TRUSTED_HOST"
 echo "[docker-build] buildkit=1 (pip cache enabled)"
 
 export DOCKER_BUILDKIT=1
-export BUILDKIT_PROGRESS=plain
 
 docker build \
   --build-arg PIP_INDEX_URL="$PIP_INDEX_URL" \
